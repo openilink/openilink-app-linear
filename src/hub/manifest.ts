@@ -16,6 +16,10 @@ export interface AppManifest {
   description: string;
   /** 订阅的事件类型列表 */
   events: string[];
+  /** 配置表单 JSON Schema */
+  config_schema?: Record<string, unknown>;
+  /** 安装引导说明（Markdown） */
+  guide?: string;
 }
 
 /** Linear 应用清单 */
@@ -25,6 +29,14 @@ export const manifest: AppManifest = {
   icon: "🔮",
   description: "通过微信管理 Linear Issue、项目、团队和迭代周期",
   events: ["command"],
+  config_schema: {
+    type: "object",
+    properties: {
+      linear_api_key: { type: "string", title: "Linear API Key", description: "在 Linear Settings → API → Personal API keys 创建" },
+    },
+    required: ["linear_api_key"],
+  },
+  guide: "## Linear 安装指南\n### 第 1 步\n访问 Linear → Settings → API\n### 第 2 步\n创建 Personal API Key\n### 第 3 步\n填写上方配置并安装",
 };
 
 /**
