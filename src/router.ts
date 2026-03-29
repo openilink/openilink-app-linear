@@ -85,7 +85,10 @@ export class Router {
     const result = await this.handleCommand(event);
     if (result === undefined) return;
 
-    const userId = (event.event?.data?.user_id as string) || "";
+    // 优先使用 sender.id
+    const evtData = event.event?.data;
+    const evtSender = (evtData as any)?.sender;
+    const userId = (evtSender?.id ?? (evtData as any)?.user_id ?? (evtData as any)?.from ?? "") as string;
     if (!userId) return;
 
     try {
