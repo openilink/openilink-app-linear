@@ -79,13 +79,17 @@ export class Router {
 
   /**
    * 完整处理流程：执行命令并通过 HubClient 回传结果
+   * 使用 /bot/v1/message/send 发送结果消息
    */
   async handleAndReply(event: HubEvent, hubClient: HubClient): Promise<void> {
     const result = await this.handleCommand(event);
     if (result === undefined) return;
 
+    const userId = (event.event?.data?.user_id as string) || "";
+    if (!userId) return;
+
     try {
-      await hubClient.replyToolResult(event.trace_id, result);
+      await hubClient.sendMessage({ userId, text: result, traceId: event.trace_id });
     } catch (err) {
       console.error("[Router] 回传工具结果失败:", err);
     }
