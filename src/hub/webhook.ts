@@ -1,41 +1,161 @@
 /**
- * Webhook 处理模块
- * 处理来自 Hub 的事件推送
+ * Webhook 事件接收与分发
+ *
+ * 负责：
+ * 1. 接收 Hub 推送的 HTTP POST 请求
+ * 2. 验证 HMAC-SHA256 签名
+ * 3. 处理 challenge 握手
+ * 4. 将业务事件分发给注册的回调函数
+ * 5. command 事件支持同步/异步超时响应（SYNC_DEADLINE = 2500ms）
  */
 
-import type { HubEvent, Tool, ToolCallRequest, ToolCallResponse } from "./types.js";
+import { verifySignature } from "../utils/crypto.js";
+import type { Store } from "./store.js";
+import type { HubEvent, Installation } from "./types.js";
+import type { HubClient } from "./client.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
-export class WebhookHandler {
-  private tools: Map<string, Tool>;
+/** 同步响应截止时间（毫秒） */
+const SYNC_DEADLINE_MS = 2500;
 
-  constructor(tools: Tool[]) {
-    this.tools = new Map(tools.map((t) => [t.name, t]));
+/** 普通事件处理回调（无返回值） */
+export type EventHandler = (event: HubEvent) => Promise<void>;
+
+/** command 事件处理回调（返回结果文本） */
+export type CommandHandler = (event: HubEvent, installation: Installation) => Promise<string | null>;
+
+/** 获取 HubClient 实例的工厂函数 */
+export type HubClientFactory = (installation: Installation) => HubClient;
+
+/** Webhook 处理器配置 */
+export interface WebhookOptions {
+  store: Store;
+  /** 普通事件回调（message 等） */
+  onEvent?: EventHandler;
+  /** command 事件回调，返回工具执行结果 */
+  onCommand?: CommandHandler;
+  /** 获取 HubClient 工厂，用于超时后异步回复 */
+  getHubClient?: HubClientFactory;
+}
+
+/**
+ * 处理 Webhook 请求（/webhook）
+ * 验证签名 → 处理 challenge → 分发事件
+ * command 事件使用 SYNC_DEADLINE 做同步/异步超时控制
+ */
+export async function handleWebhook(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: WebhookOptions,
+): Promise<void> {
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "仅支持 POST 请求" }));
+    return;
   }
 
-  /** 处理事件推送 */
-  async handleEvent(event: HubEvent): Promise<void> {
-    console.log(`[webhook] 收到事件: type=${event.type}, userId=${event.userId}`);
+  const body = await readBody(req);
+  if (!body) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "请求体为空" }));
+    return;
   }
 
-  /** 处理工具调用 */
-  async handleToolCall(request: ToolCallRequest): Promise<ToolCallResponse> {
-    const tool = this.tools.get(request.tool);
-    if (!tool) {
-      return { success: false, error: `未找到工具: ${request.tool}` };
+  let event: HubEvent;
+  try {
+    event = JSON.parse(body) as HubEvent;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "JSON 解析失败" }));
+    return;
+  }
+
+  const installation = opts.store.getInstallation(event.installation_id);
+  if (!installation) {
+    console.warn("[webhook] 未知安装实例:", event.installation_id);
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "未知的安装实例" }));
+    return;
+  }
+
+  const signature = req.headers["x-hub-signature"] as string | undefined;
+  if (!signature || !verifySignature(body, signature, installation.webhookSecret)) {
+    console.warn("[webhook] 签名验证失败:", event.installation_id);
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "签名验证失败" }));
+    return;
+  }
+
+  // 处理 challenge 握手
+  if (event.type === "challenge" && event.challenge) {
+    console.log("[webhook] 握手成功:", event.installation_id);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ challenge: event.challenge }));
+    return;
+  }
+
+  // 分发业务事件
+  if (event.type === "event") {
+    const subType = event.event?.type;
+
+    // command 事件：同步/异步超时处理
+    if (subType === "command" && opts.onCommand) {
+      const resultPromise = opts.onCommand(event, installation);
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), SYNC_DEADLINE_MS),
+      );
+      const result = await Promise.race([resultPromise, timeoutPromise]);
+
+      if (result !== null) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ reply: result }));
+        return;
+      }
+
+      // 超时，异步回复
+      if (opts.getHubClient) {
+        const hubClient = opts.getHubClient(installation);
+        resultPromise
+          .then(async (asyncResult) => {
+            if (asyncResult) {
+              const userId =
+                (event.event?.data?.user_id as string) ??
+                (event.event?.data?.from as string) ??
+                "";
+              await hubClient.sendMessage({ userId, text: asyncResult, traceId: event.trace_id });
+            }
+          })
+          .catch((err) => console.error("[webhook] 异步回复 command 失败:", err));
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ reply_async: true }));
+      return;
     }
 
-    try {
-      const result = await tool.handler(request.args);
-      return result;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[webhook] 工具调用失败: ${request.tool}`, message);
-      return { success: false, error: message };
+    // 其他事件：原有逻辑
+    if (opts.onEvent) {
+      try {
+        await opts.onEvent(event);
+      } catch (err) {
+        console.error("[webhook] 事件处理失败:", err);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "事件处理失败" }));
+        return;
+      }
     }
   }
 
-  /** 获取已注册的工具名称列表 */
-  getToolNames(): string[] {
-    return Array.from(this.tools.keys());
-  }
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: true }));
+}
+
+/** 从 IncomingMessage 读取完整请求体 */
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+    req.on("error", reject);
+  });
 }

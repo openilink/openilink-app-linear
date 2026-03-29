@@ -6,7 +6,7 @@
 export interface Config {
   /** HTTP 服务端口 */
   port: number;
-  /** Hub 回调地址 */
+  /** Hub 服务地址 */
   hubUrl: string;
   /** 本应用对外基础地址 */
   baseUrl: string;

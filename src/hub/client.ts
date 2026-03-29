@@ -1,58 +1,138 @@
 /**
- * Hub 客户端模块
- * 用于向 Hub 注册应用和上报状态
+ * Hub Bot API 客户端
+ *
+ * 封装与 Hub 的 HTTP 通信，提供发送消息、同步工具定义等能力。
  */
 
-import type { Manifest } from "./types.js";
+import type { ToolDefinition } from "./types.js";
 
-export interface HubClientOptions {
-  /** Hub 服务地址 */
-  hubUrl: string;
-  /** 本应用对外基础地址 */
-  baseUrl: string;
+/** Hub API 响应基础结构 */
+interface HubResponse<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
 }
 
+/** 发送消息请求参数 */
+export interface SendMessageParams {
+  /** 目标用户 ID */
+  userId: string;
+  /** 消息内容（文本） */
+  text: string;
+  /** 链路追踪 ID */
+  traceId?: string;
+}
+
+/** 发送消息响应 */
+export interface SendMessageResult {
+  /** 消息 ID */
+  messageId: string;
+}
+
+/**
+ * Hub Bot API 客户端
+ * 通过 appToken 认证，向 Hub 发送消息和注册工具
+ */
 export class HubClient {
   private hubUrl: string;
-  private baseUrl: string;
+  private appToken: string;
 
-  constructor(options: HubClientOptions) {
-    this.hubUrl = options.hubUrl;
-    this.baseUrl = options.baseUrl;
+  constructor(hubUrl: string, appToken: string) {
+    // 移除末尾斜杠
+    this.hubUrl = hubUrl.replace(/\/+$/, "");
+    this.appToken = appToken;
   }
 
-  /** 向 Hub 注册应用 */
-  async register(manifest: Manifest): Promise<void> {
-    try {
-      const res = await fetch(`${this.hubUrl}/api/apps/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...manifest,
-          callbackUrl: `${this.baseUrl}/api/callback`,
-        }),
-      });
+  /** 发送文本消息给指定用户 */
+  async sendMessage(params: SendMessageParams): Promise<SendMessageResult> {
+    const resp = await this.request<SendMessageResult>("/api/bot/message", {
+      method: "POST",
+      body: {
+        user_id: params.userId,
+        text: params.text,
+        trace_id: params.traceId,
+      },
+    });
+    return resp;
+  }
 
-      if (!res.ok) {
-        console.warn(`[hub-client] 注册失败: ${res.status} ${res.statusText}`);
-      } else {
-        console.log("[hub-client] 应用注册成功");
-      }
-    } catch (err) {
-      // Hub 不可用时不阻塞启动
-      console.warn("[hub-client] 无法连接 Hub:", err instanceof Error ? err.message : err);
+  /** 发送 typing 状态 */
+  async sendTyping(userId: string): Promise<void> {
+    await this.request("/api/bot/typing", {
+      method: "POST",
+      body: { user_id: userId },
+    });
+  }
+
+  /** 上报工具定义到 Hub */
+  async registerTools(tools: ToolDefinition[]): Promise<void> {
+    await this.request("/api/bot/tools", {
+      method: "PUT",
+      body: { tools },
+    });
+  }
+
+  /**
+   * 同步工具定义到 Hub（PUT /bot/v1/app/tools）
+   */
+  async syncTools(tools: ToolDefinition[]): Promise<void> {
+    const url = `${this.hubUrl}/bot/v1/app/tools`;
+    const resp = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.appToken}`,
+      },
+      body: JSON.stringify({ tools }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`[hub-client] syncTools 失败 [${resp.status}]: ${errText}`);
     }
   }
 
-  /** 发送心跳 */
-  async heartbeat(slug: string): Promise<void> {
-    try {
-      await fetch(`${this.hubUrl}/api/apps/${slug}/heartbeat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {
-      // 静默处理心跳失败
+  /** 回复工具执行结果 */
+  async replyToolResult(traceId: string, result: string): Promise<void> {
+    await this.request("/api/bot/tool-result", {
+      method: "POST",
+      body: { trace_id: traceId, result },
+    });
+  }
+
+  /** 发送通用 HTTP 请求到 Hub API */
+  private async request<T = unknown>(
+    path: string,
+    opts: { method: string; body?: unknown },
+  ): Promise<T> {
+    const url = `${this.hubUrl}${path}`;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.appToken}`,
+    };
+
+    const resp = await fetch(url, {
+      method: opts.method,
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Hub API 请求失败 [${resp.status}] ${path}: ${errText}`);
     }
+
+    // 部分接口无返回体（204）
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return undefined as T;
+    }
+
+    const json = (await resp.json()) as HubResponse<T>;
+    if (!json.ok) {
+      throw new Error(`Hub API 业务错误 ${path}: ${json.error || "未知错误"}`);
+    }
+
+    return json.data as T;
   }
 }

@@ -1,25 +1,72 @@
 /**
- * 应用 Manifest 定义
+ * 应用清单定义
  */
 
-import type { Manifest, Tool, ToolInfo } from "./types.js";
+import type { Tool, ToolDefinition } from "./types.js";
 
-/** 从工具列表生成 ToolInfo（去掉 handler） */
-function toToolInfo(tools: Tool[]): ToolInfo[] {
-  return tools.map(({ name, description, params }) => ({
-    name,
-    description,
-    params,
+/** 应用清单结构 */
+export interface AppManifest {
+  /** 应用唯一标识（URL 友好） */
+  slug: string;
+  /** 应用显示名称 */
+  name: string;
+  /** 应用图标（emoji 或 URL） */
+  icon: string;
+  /** 应用描述 */
+  description: string;
+  /** 订阅的事件类型列表 */
+  events: string[];
+}
+
+/** Linear 应用清单 */
+export const manifest: AppManifest = {
+  slug: "linear",
+  name: "Linear",
+  icon: "🔮",
+  description: "通过微信管理 Linear Issue、项目、团队和迭代周期",
+  events: ["command"],
+};
+
+/**
+ * 将原始 Tool 列表转换为 Hub 协议所需的 ToolDefinition 列表
+ * 去掉 handler，仅保留名称、描述、参数元信息
+ */
+export function toToolDefinitions(tools: Tool[]): ToolDefinition[] {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    command: t.name,
+    parameters: buildJsonSchema(t),
   }));
 }
 
-/** 创建应用 Manifest */
-export function createManifest(tools: Tool[]): Manifest {
-  return {
-    slug: "linear",
-    name: "Linear",
-    icon: "🔮",
-    events: ["command"],
-    tools: toToolInfo(tools),
+/** 将 Tool.params 转换为 JSON Schema 格式 */
+function buildJsonSchema(tool: Tool): Record<string, unknown> | undefined {
+  if (!tool.params || tool.params.length === 0) return undefined;
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const p of tool.params) {
+    const prop: Record<string, unknown> = {
+      type: p.type,
+      description: p.description,
+    };
+    if (p.enum) {
+      prop.enum = p.enum;
+    }
+    properties[p.name] = prop;
+    if (p.required) {
+      required.push(p.name);
+    }
+  }
+
+  const schema: Record<string, unknown> = {
+    type: "object",
+    properties,
   };
+  if (required.length > 0) {
+    schema.required = required;
+  }
+  return schema;
 }
