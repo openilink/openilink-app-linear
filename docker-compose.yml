@@ -1,0 +1,17 @@
+services:
+  linear-app:
+    build: .
+    ports:
+      - "8089:8089"
+    environment:
+      - LINEAR_API_KEY=${LINEAR_API_KEY}
+      - HUB_URL=http://hub:8080
+      - BASE_URL=http://linear-app:8089
+      - PORT=8089
+      - DB_PATH=data/linear.db
+    volumes:
+      - linear-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  linear-data:
