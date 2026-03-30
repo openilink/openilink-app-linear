@@ -1,119 +1,109 @@
-# OpeniLink Hub App - Linear
+# @openilink/app-linear
 
-通过微信操作 Linear 的 Hub App。纯 Tools 型应用，共提供 13 个工具。
+[![OpeniLink Hub](https://img.shields.io/badge/OpeniLink_Hub-安装到微信-07C160?style=for-the-badge&logo=wechat&logoColor=white)](https://github.com/openilink/openilink-hub)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)]()
 
-## 功能
+> 在微信里管理 Linear -- 查看 Issue、创建任务、跟进项目、管理 Cycle，随时掌握团队进度。
 
-### Issues (6 个工具)
-- `list_issues` - 列出 Issue，支持按团队和状态过滤
-- `create_issue` - 创建 Issue
-- `get_issue` - 获取 Issue 详情
-- `update_issue` - 更新 Issue
-- `search_issues` - 搜索 Issue
-- `add_comment` - 为 Issue 添加评论
+**13 个 AI Tools** | 纯工具型无状态应用
 
-### Projects (3 个工具)
-- `list_projects` - 列出项目
-- `get_project` - 获取项目详情
-- `create_project` - 创建项目
+---
 
-### Teams (2 个工具)
-- `list_teams` - 列出团队
-- `get_team` - 获取团队详情
+## 亮点
 
-### Cycles (2 个工具)
-- `list_cycles` - 列出 Cycle
-- `get_current_cycle` - 获取当前活跃 Cycle
+- **微信管理 Linear 任务** -- 出门在外也能创建 Issue、更新状态、添加评论
+- **项目 + Cycle 全覆盖** -- 不只是 Issue，项目进度和迭代周期也能查
+- **自然语言驱动** -- 对 Bot 说「查看 Linear 上我的待办」即可
+- **无状态零存储** -- 请求即响应，不存储任何用户数据
 
-## 配置
+## 13 个 AI Tools 一览
 
-| 环境变量 | 默认值 | 说明 |
-|---------|-------|------|
-| `LINEAR_API_KEY` | (必填) | Linear Personal API Key |
-| `PORT` | `8089` | HTTP 服务端口 |
-| `HUB_URL` | `http://localhost:8080` | Hub 服务地址 |
-| `BASE_URL` | `http://localhost:8089` | 本应用对外基础地址 |
-| `DB_PATH` | `data/linear.db` | SQLite 数据库路径 |
-
-## 本地开发
-
-```bash
-# 安装依赖
-npm install
-
-# 开发模式运行
-LINEAR_API_KEY=your_key npm run dev
-
-# 类型检查
-npm run typecheck
-
-# 运行测试
-npm test
-
-# 集成测试（需要真实 API Key）
-LINEAR_API_KEY=your_key npm run test:integration
-```
-
-## Docker 部署
-
-```bash
-LINEAR_API_KEY=your_key docker compose up -d
-```
-
-## API 端点
-
-- `GET /healthz` - 健康检查
-- `GET /api/manifest` - 获取应用 Manifest
-- `GET /api/tools` - 获取工具列表
-- `POST /api/tool` - 调用工具
-- `POST /api/callback` - Hub Webhook 回调
+| 分类 | 数量 | 工具 |
+|------|------|------|
+| **Issue** | 6 | `list_issues` `create_issue` `get_issue` `update_issue` `search_issues` `add_comment` |
+| **项目** | 3 | `list_projects` `get_project` `create_project` |
+| **团队** | 2 | `list_teams` `get_team` |
+| **Cycle** | 2 | `list_cycles` `get_current_cycle` |
 
 ## 使用方式
 
-安装到 Bot 后，支持三种方式调用：
+安装到 Bot 后，支持三种方式：
 
-### 自然语言（推荐）
-
-直接用微信跟 Bot 对话，Hub AI 会自动识别意图并调用对应功能：
-
+**自然语言（推荐）** -- 直接对 Bot 说话，Hub AI 自动识别意图并调用：
 - "查看 Linear 上我的待办"
 - "创建一个 Issue 标题是优化首页性能"
+- "当前 Cycle 还剩多少任务"
 
-### 命令调用
+**命令调用** -- `/list_issues --state in_progress`
 
-也可以使用 `/命令名 参数` 的格式直接调用：
+**AI 自动调用** -- Hub AI 在多轮对话中自动判断何时需要调用本 App。
 
-- `/list_issues --state in_progress`
+<details>
+<summary><strong>部署与配置</strong></summary>
 
-### AI 自动调用
+### 环境变量
 
-Hub AI 在多轮对话中会自动判断是否需要调用本 App 的功能，无需手动触发。
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `LINEAR_API_KEY` | 是 | -- | Linear Personal API Key |
+| `HUB_URL` | 否 | `http://localhost:8080` | Hub 服务地址 |
+| `BASE_URL` | 否 | `http://localhost:8089` | 本应用对外基础地址 |
+| `PORT` | 否 | `8089` | HTTP 服务端口 |
+| `DB_PATH` | 否 | `data/linear.db` | SQLite 数据库路径 |
+
+### 启动
+
+```bash
+# Docker（推荐）
+LINEAR_API_KEY=your_key docker compose up -d
+
+# 或源码运行
+git clone https://github.com/openilink/openilink-app-linear.git
+cd openilink-app-linear
+npm install
+LINEAR_API_KEY=your_key npm run dev
+```
+
+### 开发
+
+```bash
+npm run typecheck   # 类型检查
+npm test            # 单元测试
+LINEAR_API_KEY=your_key npm run test:integration  # 集成测试
+```
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/healthz` | 健康检查 |
+| `GET` | `/api/manifest` | 获取应用 Manifest |
+| `GET` | `/api/tools` | 获取工具列表 |
+| `POST` | `/api/tool` | 调用工具 |
+| `POST` | `/api/callback` | Hub Webhook 回调 |
+
+</details>
 
 ## 安全与隐私
 
-### 数据处理说明
+- **无状态工具** -- 请求即响应，不存储任何用户数据
+- **API Key 安全** -- 仅存储在服务端环境变量或 Installation 配置中，不会暴露给其他用户
+- **完全开源** -- 所有代码接受社区审查；自部署后数据完全不经过第三方
 
-- **无状态工具**：本 App 为纯工具型应用，请求即响应，**不存储任何用户数据**
-- **第三方 API 调用**：您的请求会通过 Linear API 处理，请参阅其隐私政策
-- **API Key 安全**：您的 API Key 仅存储在服务端环境变量或 Installation 配置中，不会暴露给其他用户
+## 更多 OpeniLink Hub App
 
-### 应用市场安装（托管模式）
-
-通过 OpeniLink Hub 应用市场安装时，您的请求将通过我们的服务器转发至第三方 API。我们承诺：
-
-- 不会记录、存储或分析您的请求内容和返回结果
-- 您的 API Key 加密存储，仅用于调用对应的第三方服务
-- 所有 App 代码完全开源，接受社区审查
-
-### 自部署（推荐注重隐私的用户）
-
-如果您对数据隐私有更高要求，建议自行部署：
-
-```bash
-docker compose up -d
-```
-
-自部署后 API Key 和所有请求数据仅在您自己的服务器上。
+| App | 说明 |
+|-----|------|
+| [openilink-hub](https://github.com/openilink/openilink-hub) | 开源微信 Bot 管理平台 |
+| [app-notion](https://github.com/openilink/openilink-app-notion) | 微信操作 Notion -- 15 Tools |
+| [app-github](https://github.com/openilink/openilink-app-github) | 微信管理 GitHub -- 36 Tools |
+| [app-amap](https://github.com/openilink/openilink-app-amap) | 微信查高德地图 -- 10 Tools |
+| [app-lark](https://github.com/openilink/openilink-app-lark) | 微信 <-> 飞书桥接 -- 34 Tools |
+| [app-slack](https://github.com/openilink/openilink-app-slack) | 微信 <-> Slack 桥接 -- 23 Tools |
+| [app-dingtalk](https://github.com/openilink/openilink-app-dingtalk) | 微信 <-> 钉钉桥接 -- 20 Tools |
+| [app-discord](https://github.com/openilink/openilink-app-discord) | 微信 <-> Discord 桥接 -- 19 Tools |
+| [app-google](https://github.com/openilink/openilink-app-google) | 微信操作 Google Workspace -- 18 Tools |
 
 ## License
 
