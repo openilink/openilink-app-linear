@@ -12,22 +12,17 @@ export interface Config {
   baseUrl: string;
   /** SQLite 数据库文件路径 */
   dbPath: string;
-  /** Linear Personal API Key（必填） */
+  /** Linear Personal API Key（可选，云端托管模式下由用户在安装时填写） */
   linearApiKey: string;
 }
 
 /** 从环境变量加载配置 */
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const linearApiKey = env.LINEAR_API_KEY?.trim();
-  if (!linearApiKey) {
-    throw new Error("环境变量 LINEAR_API_KEY 是必填的");
-  }
-
   return {
     port: parseInt(env.PORT?.trim() || "8089", 10),
     hubUrl: env.HUB_URL?.trim() || "http://localhost:8080",
     baseUrl: env.BASE_URL?.trim() || "http://localhost:8089",
     dbPath: env.DB_PATH?.trim() || "data/linear.db",
-    linearApiKey,
+    linearApiKey: env.LINEAR_API_KEY?.trim() || "",
   };
 }

@@ -15,6 +15,7 @@ import { HubClient } from "./hub/client.js";
 import { toToolDefinitions } from "./hub/manifest.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { handleOAuthStart, handleOAuthCallback } from "./hub/oauth.js";
+import { handleSettingsPage, handleSettingsVerify, handleSettingsSave } from "./hub/settings.js";
 import { Router } from "./router.js";
 import type { Tool, ToolDefinition, Installation } from "./hub/types.js";
 
@@ -70,23 +71,30 @@ function createHubClientFactory(inst: Installation): HubClient {
 async function main(): Promise<void> {
   const config = loadConfig();
 
-  // 初始化 Linear 客户端
-  const linearClient = new LinearClient({ apiKey: config.linearApiKey });
+  // 初始化 Linear 客户端（API Key 可选，云端托管模式下由用户安装时填写）
+  const linearClient = config.linearApiKey
+    ? new LinearClient({ apiKey: config.linearApiKey })
+    : null;
 
-  // 验证 API Key 有效性
-  try {
-    const viewer = await linearClient.viewer;
-    console.log(`[main] Linear 已连接，用户: ${viewer.name} (${viewer.email})`);
-  } catch (err) {
-    console.error("[main] Linear API Key 无效:", err instanceof Error ? err.message : err);
-    process.exit(1);
+  // 验证 API Key 有效性（仅在有 API Key 时）
+  if (linearClient) {
+    try {
+      const viewer = await linearClient.viewer;
+      console.log(`[main] Linear 已连接，用户: ${viewer.name} (${viewer.email})`);
+    } catch (err) {
+      console.error("[main] Linear API Key 无效:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  } else {
+    console.log("[main] 未配置 LINEAR_API_KEY，运行在云端托管模式");
   }
 
   // 初始化存储
   const store = new Store(config.dbPath);
 
-  // 收集所有工具
-  const tools = collectAllTools(linearClient);
+  // 收集所有工具（使用默认 client 或占位 client 来获取工具列表）
+  const placeholderClient = linearClient ?? new LinearClient({ apiKey: "placeholder" });
+  const tools = collectAllTools(placeholderClient);
   console.log(`[main] 已注册 ${tools.length} 个工具: ${tools.map((t) => t.name).join(", ")}`);
 
   // 转换为 Hub 协议工具定义
@@ -109,9 +117,45 @@ async function main(): Promise<void> {
       return;
     }
 
-    // OAuth 授权启动
+    // OAuth 授权启动（GET 显示表单 / POST 提交表单）
     if (url.pathname === "/oauth/setup") {
-      handleOAuthStart(req, res, { config, store, tools: definitions });
+      handleOAuthStart(req, res, { config, store, tools: definitions }).catch((err) => {
+        console.error("[main] OAuth setup 异常:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "内部错误" }));
+        }
+      });
+      return;
+    }
+
+    // GET /settings — 设置页面
+    if (url.pathname === "/settings" && req.method === "GET") {
+      handleSettingsPage(req, res);
+      return;
+    }
+
+    // POST /settings/verify — 验证身份
+    if (url.pathname === "/settings/verify" && req.method === "POST") {
+      handleSettingsVerify(req, res, config, store).catch((err) => {
+        console.error("[main] Settings verify 异常:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "内部错误" }));
+        }
+      });
+      return;
+    }
+
+    // POST /settings/save — 保存配置
+    if (url.pathname === "/settings/save" && req.method === "POST") {
+      handleSettingsSave(req, res, config, store).catch((err) => {
+        console.error("[main] Settings save 异常:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "内部错误" }));
+        }
+      });
       return;
     }
 

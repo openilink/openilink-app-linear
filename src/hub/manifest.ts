@@ -36,7 +36,7 @@ export const manifest: AppManifest = {
     },
     required: ["linear_api_key"],
   },
-  guide: "## Linear 安装指南\n### 第 1 步\n访问 Linear → Settings → API\n### 第 2 步\n创建 Personal API Key\n### 第 3 步\n填写上方配置并安装",
+  guide: "## Linear 安装指南\n### 第 1 步\n访问 Linear → Settings → API\n### 第 2 步\n创建 Personal API Key\n### 第 3 步\n填写上方配置并安装\n\n安装后可通过 /settings 页面随时修改配置。",
 };
 
 /**
