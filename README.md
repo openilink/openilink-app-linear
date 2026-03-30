@@ -68,6 +68,27 @@ LINEAR_API_KEY=your_key docker compose up -d
 - `POST /api/tool` - 调用工具
 - `POST /api/callback` - Hub Webhook 回调
 
+## 使用方式
+
+安装到 Bot 后，支持三种方式调用：
+
+### 自然语言（推荐）
+
+直接用微信跟 Bot 对话，Hub AI 会自动识别意图并调用对应功能：
+
+- "查看 Linear 上我的待办"
+- "创建一个 Issue 标题是优化首页性能"
+
+### 命令调用
+
+也可以使用 `/命令名 参数` 的格式直接调用：
+
+- `/list_issues --state in_progress`
+
+### AI 自动调用
+
+Hub AI 在多轮对话中会自动判断是否需要调用本 App 的功能，无需手动触发。
+
 ## 安全与隐私
 
 ### 数据处理说明
