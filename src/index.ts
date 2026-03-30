@@ -147,8 +147,16 @@ async function main(): Promise<void> {
           createdAt: new Date().toISOString(),
         });
         console.log("[oauth] 模式2安装成功, installation_id:", data.installation_id);
+        // 安装后从 Hub 拉取用户配置并加密存储
+        const mode2HubClient = new HubClient(data.hub_url || config.hubUrl, data.app_token);
+        mode2HubClient.fetchConfig().then((userConfig) => {
+          if (Object.keys(userConfig).length > 0) {
+            store.saveConfig(data.installation_id, userConfig);
+            console.log("[oauth] 模式2用户配置已加密存储");
+          }
+        }).catch((err) => console.error("[oauth] 模式2拉取配置失败:", err));
         // 异步同步工具定义到 Hub
-        new HubClient(data.hub_url || config.hubUrl, data.app_token)
+        mode2HubClient
           .syncTools(definitions)
           .catch((err) => console.error("[oauth] 模式2同步工具失败:", err));
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -167,9 +175,16 @@ async function main(): Promise<void> {
     if (url.pathname === "/webhook") {
       handleWebhook(req, res, {
         store,
-        // command 事件：通过 Router 执行工具并返回结果
-        onCommand: async (event, _installation) => {
-          const result = await router.handleCommand(event);
+        // command 事件：从本地加密存储读取配置，动态创建 LinearClient
+        onCommand: async (event, installation) => {
+          // 从加密存储读取 per-installation 配置
+          const localConfig = store.getConfig(installation.id);
+          const apiKey = localConfig.linear_api_key || config.linearApiKey;
+          // 动态创建对应 installation 的 LinearClient
+          const instLinearClient = new LinearClient({ apiKey });
+          const instTools = collectAllTools(instLinearClient);
+          const instRouter = new Router({ definitions, tools: instTools, store });
+          const result = await instRouter.handleCommand(event);
           return result ?? null;
         },
         // 超时后异步回复需要的 HubClient 工厂

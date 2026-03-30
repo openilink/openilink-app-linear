@@ -11,7 +11,14 @@
  *   code_challenge: SHA256(code_verifier), base64url 编码
  */
 
-import { createHmac, randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  createHash,
+  timingSafeEqual,
+  createCipheriv,
+  createDecipheriv,
+} from "node:crypto";
 
 /**
  * 验证 Webhook 签名
