@@ -116,9 +116,45 @@ async function main(): Promise<void> {
     }
 
     // OAuth 授权回调
-    if (url.pathname === "/oauth/redirect") {
+    if (url.pathname === "/oauth/redirect" && req.method === "GET") {
       handleOAuthCallback(req, res, { config, store, tools: definitions }).catch((err) => {
         console.error("[main] OAuth 回调异常:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "内部错误" }));
+        }
+      });
+      return;
+    }
+
+    // POST /oauth/redirect — 模式 2: Hub 直接安装通知
+    if (url.pathname === "/oauth/redirect" && req.method === "POST") {
+      (async () => {
+        const body = await new Promise<Buffer>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          req.on("data", (chunk: Buffer) => chunks.push(chunk));
+          req.on("end", () => resolve(Buffer.concat(chunks)));
+          req.on("error", reject);
+        });
+        const data = JSON.parse(body.toString());
+        store.saveInstallation({
+          id: data.installation_id,
+          hubUrl: data.hub_url || config.hubUrl,
+          appId: "",
+          botId: data.bot_id || "",
+          appToken: data.app_token,
+          webhookSecret: data.webhook_secret,
+          createdAt: new Date().toISOString(),
+        });
+        console.log("[oauth] 模式2安装成功, installation_id:", data.installation_id);
+        // 异步同步工具定义到 Hub
+        new HubClient(data.hub_url || config.hubUrl, data.app_token)
+          .syncTools(definitions)
+          .catch((err) => console.error("[oauth] 模式2同步工具失败:", err));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ webhook_url: `${config.baseUrl}/webhook` }));
+      })().catch((err) => {
+        console.error("[main] 模式2安装异常:", err);
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "内部错误" }));
